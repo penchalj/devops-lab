@@ -1,0 +1,14 @@
+[Unit]
+Description=Lab demo app
+After=network.target
+
+[Service]
+User=labapp
+# Bind to localhost only - nginx is the public entry point
+Environment=HOST=127.0.0.1
+Environment=PORT={{ app_port }}
+ExecStart=/usr/bin/python3 /opt/labapp/app.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

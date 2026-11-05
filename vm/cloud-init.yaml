@@ -1,0 +1,19 @@
+#cloud-config
+# Used by: multipass launch 24.04 --name lab-vm --cpus 2 --memory 2G --disk 15G --cloud-init vm/cloud-init.yaml
+package_update: true
+packages:
+  - curl
+  - net-tools
+  - tree
+  - htop
+  - python3
+
+users:
+  - default
+  - name: labadmin
+    groups: sudo
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      # Paste the content of ~/.ssh/lab_vm.pub here (README step 4)
+      - REPLACE_WITH_YOUR_PUBLIC_KEY

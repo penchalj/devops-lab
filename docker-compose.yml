@@ -1,0 +1,36 @@
+# DevOps interview lab: Jenkins controller + SSH build agent
+# Start:  docker compose up -d --build
+# Stop:   docker compose down        (add -v to also delete Jenkins data)
+
+services:
+  jenkins:
+    build: ./jenkins
+    container_name: jenkins
+    # LAB ONLY: running as root so the controller can use the host Docker socket.
+    # Interview talking point: in production you would use dedicated agents,
+    # 0 executors on the controller, and rootless Docker / Kaniko / DinD for builds.
+    user: root
+    ports:
+      - "8080:8080"     # Web UI
+      - "50000:50000"   # Inbound (JNLP) agents
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [lab]
+    restart: unless-stopped
+
+  agent:
+    image: jenkins/ssh-agent:latest-jdk21
+    container_name: jenkins-agent
+    environment:
+      # Set in .env (see README step 2)
+      - JENKINS_AGENT_SSH_PUBKEY=${JENKINS_AGENT_SSH_PUBKEY:-}
+    networks: [lab]
+    restart: unless-stopped
+
+volumes:
+  jenkins_home:
+
+networks:
+  lab:
+    name: lab-net

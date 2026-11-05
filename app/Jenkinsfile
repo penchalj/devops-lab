@@ -1,0 +1,75 @@
+// Declarative pipeline: test -> build image -> smoke test -> (optional) run on SSH agent
+pipeline {
+    // LAB: the controller has the Docker CLI. In production: dedicated agents, 0 executors on the controller.
+    agent { label 'built-in' }
+
+    options {
+        timestamps()
+        timeout(time: 15, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        booleanParam(name: 'RUN_ON_AGENT', defaultValue: false,
+                     description: 'Also run a stage on the SSH agent (label: linux)')
+    }
+
+    environment {
+        IMAGE         = "lab-app:${env.BUILD_NUMBER}"
+        APP_CONTAINER = "lab-app-${env.BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Unit tests') {
+            agent {
+                docker { image 'python:3.12-slim'; reuseNode true }
+            }
+            steps {
+                dir('app') {
+                    sh 'python -m py_compile app.py'
+                    sh 'python -m unittest -v'
+                }
+            }
+        }
+
+        stage('Build image') {
+            steps {
+                dir('app') {
+                    sh 'docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t "$IMAGE" .'
+                }
+            }
+        }
+
+        stage('Smoke test') {
+            steps {
+                sh '''
+                    docker run -d --name "$APP_CONTAINER" --network lab-net -e APP_VERSION="$BUILD_NUMBER" "$IMAGE"
+                    for i in $(seq 1 10); do
+                        if curl -fsS "http://$APP_CONTAINER:8000/health"; then
+                            echo; echo "Smoke test passed"; exit 0
+                        fi
+                        sleep 1
+                    done
+                    echo "Smoke test FAILED"; docker logs "$APP_CONTAINER"; exit 1
+                '''
+            }
+        }
+
+        stage('Agent check') {
+            when { expression { params.RUN_ON_AGENT } }
+            agent { label 'linux' }
+            steps {
+                sh 'hostname; uname -a; java -version; df -h .'
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker rm -f "$APP_CONTAINER" >/dev/null 2>&1 || true'
+        }
+        success { echo "Built and verified ${env.IMAGE}" }
+        failure { echo 'Build failed - check the stage logs above' }
+    }
+}
