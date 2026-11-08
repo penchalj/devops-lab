@@ -36,7 +36,9 @@ pipeline {
         stage('Build image') {
             steps {
                 dir('app') {
-                    sh 'docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t "$IMAGE" .'
+                    //sh 'docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t "$IMAGE" .'
+                    sh 'docker build --pull -t "$IMAGE" .'
+
                 }
             }
         }
