@@ -40,6 +40,28 @@ pipeline {
                 }
             }
         }
+        stage('Security scan') {
+            agent {
+                docker {
+                    image 'aquasec/trivy:latest'
+                    args  '--entrypoint= -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache'
+                    reuseNode true
+                }
+            }
+            steps {
+                // 1. Secrets + dependency CVEs + misconfig in the source code (report only)
+                sh 'trivy fs --scanners vuln,secret,misconfig --exit-code 0 --no-progress .'
+
+                // 2. SBOM of the image (ingredient list) - kept with the build
+                sh 'trivy image --format cyclonedx --output sbom.cdx.json --no-progress "$IMAGE"'
+
+                // 3. GATE: fail the build on HIGH/CRITICAL CVEs that have a fix
+                sh 'trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress "$IMAGE"'
+            }
+            post {
+                always { archiveArtifacts artifacts: 'sbom.cdx.json', allowEmptyArchive: true }
+            }
+        }
 
         stage('Smoke test') {
             steps {
