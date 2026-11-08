@@ -1,4 +1,4 @@
-# DevOps Interview Lab (Docker + Jenkins + Linux VM + Ansible)
+# DevOps Lab (Docker + Jenkins + Linux VM + Ansible)
 
 Hands-on lab for the RATIONAL work trial. Setup takes about 1.5–2 hours. After that, use `DRILLS.md`.
 
