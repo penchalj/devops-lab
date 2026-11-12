@@ -21,13 +21,13 @@ spec:
         runAsUser: 10001
       containers:
         - name: lab-app
-          image: ghcr.io/penchalj/lab-app:11
+          image: ghcr.io/penchalj/lab-app:12
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           env:
             - name: APP_VERSION
-              value: "11"
+              value: "12"
           readinessProbe:
             httpGet:
               path: /health
