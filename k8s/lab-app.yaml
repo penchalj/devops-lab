@@ -14,12 +14,14 @@ spec:
       labels:
         app: lab-app
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
       containers:
         - name: lab-app
-          image: ghcr.io/penchalj/lab-app:
+          image: lab-app:9
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
