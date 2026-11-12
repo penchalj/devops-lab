@@ -1,4 +1,5 @@
 FROM python:3.12-slim
+LABEL org.opencontainers.image.source="https://github.com/penchalj/devops-lab"
 
 # Install latest Debian security updates (base image may lag behind)
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*

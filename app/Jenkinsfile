@@ -1,11 +1,12 @@
-// Declarative pipeline: test -> build image -> smoke test -> (optional) run on SSH agent
+// CI -> GitOps pipeline: test -> build -> security scan -> smoke test -> push to GHCR -> update manifest in Git
+// ArgoCD then deploys the new image tag from Git.
 pipeline {
     // LAB: the controller has the Docker CLI. In production: dedicated agents, 0 executors on the controller.
     agent { label 'built-in' }
 
     options {
         timestamps()
-        timeout(time: 15, unit: 'MINUTES')
+        timeout(time: 20, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '10'))
         disableConcurrentBuilds()
     }
@@ -16,9 +17,10 @@ pipeline {
     }
 
     environment {
-        IMAGE         = "lab-app:${env.BUILD_NUMBER}"
+        IMAGE         = "ghcr.io/penchalj/lab-app:${env.BUILD_NUMBER}"
         APP_CONTAINER = "lab-app-${env.BUILD_NUMBER}"
     }
+
 
     stages {
         stage('Unit tests') {
@@ -53,11 +55,9 @@ pipeline {
             steps {
                 // 1. Secrets + dependency CVEs + misconfig in the source code (report only)
                 sh 'trivy fs --scanners vuln,secret,misconfig --exit-code 0 --no-progress .'
-
-                // 2. SBOM of the image (ingredient list) - kept with the build
+                // 2. SBOM of the image - archived with the build
                 sh 'trivy image --format cyclonedx --output sbom.cdx.json --no-progress "$IMAGE"'
-
-                // 3. GATE: fail the build on HIGH/CRITICAL CVEs that have a fix
+                // 3. GATE: fail on HIGH/CRITICAL CVEs that have a fix
                 sh 'trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress "$IMAGE"'
             }
             post {
@@ -79,6 +79,44 @@ pipeline {
                 '''
             }
         }
+        stage('Publish image') {
+            // Push the tested, scanned image to GitHub Container Registry
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'ghcr',
+                                                  usernameVariable: 'REG_USER',
+                                                  passwordVariable: 'REG_TOKEN')]) {
+                    sh '''
+                        echo "$REG_TOKEN" | docker login ghcr.io -u "$REG_USER" --password-stdin
+                        docker push "$IMAGE"
+                        docker logout ghcr.io
+                    '''
+                }
+            }
+        }
+
+        stage('Update GitOps manifest') {
+            // Write the new image tag into k8s/lab-app.yaml and push -> ArgoCD deploys it
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'github-push',
+                                                  usernameVariable: 'GIT_USER',
+                                                  passwordVariable: 'GIT_TOKEN')]) {
+                    sh '''
+                        git config user.name  "Jenkins CI"
+                        git config user.email "jenkins@lab.local"
+                        git fetch origin main
+                        git checkout -B main origin/main
+
+                        sed -i "s|image: .*lab-app:.*|image: ghcr.io/penchalj/lab-app:${BUILD_NUMBER}|" k8s/lab-app.yaml
+                        sed -i "/name: APP_VERSION/{n;s|value: .*|value: \\"${BUILD_NUMBER}\\"|}" k8s/lab-app.yaml
+                        grep -A1 -E 'image:|APP_VERSION' k8s/lab-app.yaml
+
+                        git add k8s/lab-app.yaml
+                        git commit -m "Deploy lab-app:${BUILD_NUMBER} [skip ci]" || echo "Nothing to commit"
+                        git push "https://${GIT_USER}:${GIT_TOKEN}@github.com/penchalj/devops-lab.git" main
+                    '''
+                }
+            }
+        }
 
         stage('Agent check') {
             when { expression { params.RUN_ON_AGENT } }
@@ -93,7 +131,7 @@ pipeline {
         always {
             sh 'docker rm -f "$APP_CONTAINER" >/dev/null 2>&1 || true'
         }
-        success { echo "Built and verified ${env.IMAGE}" }
+        success { echo "Built, scanned, pushed and deployed via GitOps: ${env.IMAGE}" }
         failure { echo 'Build failed - check the stage logs above' }
     }
 }
